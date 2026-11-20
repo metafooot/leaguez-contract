@@ -59,7 +59,7 @@ def approval_program():
         box_len = App.box_length(box_key)
         return Seq([
             box_len,
-            Assert(box_len.exists() == Int(0)), # box must NOT exist yet
+            Assert(box_len.hasValue() == Int(0)), # box must NOT exist yet
             Assert(Txn.application_args.length() == Int(3)),
             Assert(pick_str == Bytes("HOME") or pick_str == Bytes("DRAW") or pick_str == Bytes("AWAY")),
             Assert(stake >= Int(1000000)), # $1
@@ -102,7 +102,7 @@ def approval_program():
         )
         return Seq([
             box_len,
-            Assert(box_len.exists() == Int(1)), # box must exist
+            Assert(box_len.hasValue() == Int(1)), # box must exist
             Assert(Txn.application_args.length() == Int(3)),
             Assert(pick_str == Bytes("HOME") or pick_str == Bytes("DRAW") or pick_str == Bytes("AWAY")),
             Assert(status == Int(0)), # OPEN only
@@ -153,10 +153,10 @@ def approval_program():
         winner_addr = If(is_creator_win, creator, joiner)
         return Seq([
             box_len,
-            Assert(box_len.exists() == Int(1)),
+            Assert(box_len.hasValue() == Int(1)),
             Assert(Txn.application_args.length() == Int(3)),
             Assert(result_str == Bytes("HOME") or result_str == Bytes("DRAW") or result_str == Bytes("AWAY")),
-            Assert(Txn.sender() == App.globalGet(ORACLE)), # only oracle, GitHub + ESPN
+            Assert(Txn.sender() == App.globalGet(ORACLE)), # only oracle, 【entity-GitHub¦canonical_name=GitHub】 + 【entity-ESPN¦canonical_name=ESPN】
             Assert(status == Int(1)), # MATCHED only, no double settle
             If(
                 is_winner,
@@ -236,7 +236,7 @@ def approval_program():
         created_at = Btoi(App.box_extract(box_key, Int(75), Int(8)))
         return Seq([
             box_len,
-            Assert(box_len.exists() == Int(1)),
+            Assert(box_len.hasValue() == Int(1)),
             Assert(Txn.application_args.length() == Int(2)),
             Assert(status == Int(1)), # MATCHED only
             Assert(Global.latest_timestamp() > created_at + Int(86400)), # 24h no result
