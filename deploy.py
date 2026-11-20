@@ -1,4 +1,5 @@
 import os
+import base64
 from algosdk import account, mnemonic
 from algosdk.v2client import algod
 from algosdk import transaction
@@ -11,7 +12,7 @@ USDC_TESTNET = 10458941
 
 def compile_program(client, source):
     result = client.compile(source)
-    return result["result"]
+    return base64.b64decode(result["result"])
 
 def wait(txid):
     return transaction.wait_for_confirmation(algod_client, txid, 10)
@@ -47,7 +48,7 @@ create_txn = transaction.ApplicationCreateTxn(
     clear_program=clear_compiled,
     global_schema=global_schema,
     local_schema=local_schema,
-    extra_program_pages=1,
+    extra_pages=1,
 )
 
 signed = create_txn.sign(private_key)
