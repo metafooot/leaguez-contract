@@ -1,9 +1,9 @@
 import os
 import base64
-from algosdk import account, mnemonic
+import hashlib
+from algosdk import account, mnemonic, encoding
 from algosdk.v2client import algod
 from algosdk import transaction
-from algosdk.logic import address as app_address
 from pyteal import compileTeal, Mode
 from contract import approval_program, clear_program
 
@@ -16,6 +16,12 @@ def compile_program(client, source):
 
 def wait(txid):
     return transaction.wait_for_confirmation(algod_client, txid, 10)
+
+def get_app_address(app_id):
+    # App address = checksum of b"appID" + app_id as 8-byte big-endian
+    buf = b"appID" + app_id.to_bytes(8, "big")
+    h = hashlib.sha256(buf).digest()
+    return encoding.encode_address(h)
 
 mnemonic_phrase = os.environ.get("DEPLOYER_MNEMONIC", "").strip()
 if not mnemonic_phrase:
@@ -55,7 +61,7 @@ signed = create_txn.sign(private_key)
 txid = algod_client.send_transaction(signed)
 confirmed = wait(txid)
 app_id = confirmed["application-index"]
-app_addr = app_address(app_id)
+app_addr = get_app_address(app_id)
 
 print("========================================")
 print("LEAGUEZZ DEPLOYED - TESTNET")
