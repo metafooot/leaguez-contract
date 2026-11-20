@@ -34,7 +34,6 @@ def approval_program():
         ])
 
     def handle_opt_in():
-        # Opt contract into USDC so it can hold USDC
         return Seq([
             Assert(Txn.sender() == App.globalGet(CREATOR)),
             InnerTxnBuilder.Begin(),
@@ -57,7 +56,10 @@ def approval_program():
         )
         bet_id = App.globalGet(BET_COUNT)
         box_key = Itob(bet_id)
+        box_len = App.box_length(box_key)
         return Seq([
+            box_len,
+            Assert(box_len.exists() == Int(0)), # box must NOT exist yet
             Assert(Txn.application_args.length() == Int(3)),
             Assert(pick_str == Bytes("HOME") or pick_str == Bytes("DRAW") or pick_str == Bytes("AWAY")),
             Assert(stake >= Int(1000000)), # $1
@@ -68,7 +70,6 @@ def approval_program():
             Assert(Gtxn[1].asset_receiver() == Global.current_application_address()),
             Assert(Gtxn[1].xfer_asset() == App.globalGet(USDC)),
             Assert(Gtxn[1].asset_amount() == stake),
-            Assert(App.box_exists(box_key) == Int(0)),
             App.box_put(
                 box_key,
                 Concat(
@@ -90,6 +91,7 @@ def approval_program():
         bet_id = Btoi(Txn.application_args[1])
         pick_str = Txn.application_args[2]
         box_key = Itob(bet_id)
+        box_len = App.box_length(box_key)
         creator = App.box_extract(box_key, Int(0), Int(32))
         creator_pick = Btoi(App.box_extract(box_key, Int(32), Int(1)))
         stake = Btoi(App.box_extract(box_key, Int(33), Int(8)))
@@ -99,9 +101,10 @@ def approval_program():
             If(pick_str == Bytes("DRAW"), Int(1), Int(2))
         )
         return Seq([
+            box_len,
+            Assert(box_len.exists() == Int(1)), # box must exist
             Assert(Txn.application_args.length() == Int(3)),
             Assert(pick_str == Bytes("HOME") or pick_str == Bytes("DRAW") or pick_str == Bytes("AWAY")),
-            Assert(App.box_exists(box_key) == Int(1)),
             Assert(status == Int(0)), # OPEN only
             Assert(Txn.sender() != creator), # cannot join own bet
             Assert(pick_code != creator_pick), # must pick different outcome
@@ -130,6 +133,7 @@ def approval_program():
         bet_id = Btoi(Txn.application_args[1])
         result_str = Txn.application_args[2]
         box_key = Itob(bet_id)
+        box_len = App.box_length(box_key)
         creator = App.box_extract(box_key, Int(0), Int(32))
         creator_pick = Btoi(App.box_extract(box_key, Int(32), Int(1)))
         stake = Btoi(App.box_extract(box_key, Int(33), Int(8)))
@@ -148,15 +152,15 @@ def approval_program():
         is_winner = Or(is_creator_win, is_joiner_win)
         winner_addr = If(is_creator_win, creator, joiner)
         return Seq([
+            box_len,
+            Assert(box_len.exists() == Int(1)),
             Assert(Txn.application_args.length() == Int(3)),
             Assert(result_str == Bytes("HOME") or result_str == Bytes("DRAW") or result_str == Bytes("AWAY")),
-            Assert(Txn.sender() == App.globalGet(ORACLE)), # only oracle, 【entity-GitHub¦canonical_name=GitHub】 + 【entity-ESPN¦canonical_name=ESPN】
-            Assert(App.box_exists(box_key) == Int(1)),
+            Assert(Txn.sender() == App.globalGet(ORACLE)), # only oracle, GitHub + ESPN
             Assert(status == Int(1)), # MATCHED only, no double settle
             If(
                 is_winner,
                 Seq([
-                    # Winner gets 90%, Leaguezz gets 10%
                     InnerTxnBuilder.Begin(),
                     InnerTxnBuilder.SetFields({
                         TxnField.type_enum: TxnType.AssetTransfer,
@@ -224,14 +228,16 @@ def approval_program():
     def handle_refund():
         bet_id = Btoi(Txn.application_args[1])
         box_key = Itob(bet_id)
+        box_len = App.box_length(box_key)
         creator = App.box_extract(box_key, Int(0), Int(32))
         stake = Btoi(App.box_extract(box_key, Int(33), Int(8)))
         joiner = App.box_extract(box_key, Int(41), Int(32))
         status = Btoi(App.box_extract(box_key, Int(74), Int(1)))
         created_at = Btoi(App.box_extract(box_key, Int(75), Int(8)))
         return Seq([
+            box_len,
+            Assert(box_len.exists() == Int(1)),
             Assert(Txn.application_args.length() == Int(2)),
-            Assert(App.box_exists(box_key) == Int(1)),
             Assert(status == Int(1)), # MATCHED only
             Assert(Global.latest_timestamp() > created_at + Int(86400)), # 24h no result
             InnerTxnBuilder.Begin(),
