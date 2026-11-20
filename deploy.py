@@ -18,8 +18,9 @@ def wait(txid):
     return transaction.wait_for_confirmation(algod_client, txid, 10)
 
 def get_app_address(app_id):
+    # CORRECT: Algorand uses SHA512_256, not SHA256
     buf = b"appID" + app_id.to_bytes(8, "big")
-    h = hashlib.sha256(buf).digest()
+    h = hashlib.new("sha512_256", buf).digest()
     return encoding.encode_address(h)
 
 mnemonic_phrase = os.environ.get("DEPLOYER_MNEMONIC", "").strip()
@@ -81,7 +82,6 @@ txid2 = algod_client.send_transaction(signed_fund)
 wait(txid2)
 print("Funded app with 0.5 ALGO")
 
-# FIX: must list USDC in foreign_assets for inner USDC transfer
 sp3 = algod_client.suggested_params()
 optin_txn = transaction.ApplicationNoOpTxn(
     sender=deployer,
