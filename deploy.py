@@ -18,7 +18,6 @@ def wait(txid):
     return transaction.wait_for_confirmation(algod_client, txid, 10)
 
 def get_app_address(app_id):
-    # App address = checksum of b"appID" + app_id as 8-byte big-endian
     buf = b"appID" + app_id.to_bytes(8, "big")
     h = hashlib.sha256(buf).digest()
     return encoding.encode_address(h)
@@ -42,7 +41,6 @@ clear_compiled = compile_program(algod_client, clear_teal)
 
 sp = algod_client.suggested_params()
 
-# Global: 4 ints (fee, bet_count, active, usdc) + 3 bytes (creator, oracle, fee_addr)
 global_schema = transaction.StateSchema(num_uints=4, num_byte_slices=3)
 local_schema = transaction.StateSchema(num_uints=0, num_byte_slices=0)
 
@@ -76,7 +74,6 @@ with open("app_id.txt", "w") as f:
     f.write(f"DEPLOYER={deployer}\n")
     f.write(f"USDC_TESTNET={USDC_TESTNET}\n")
 
-# Fund app so it can opt-in to USDC (0.5 ALGO)
 sp2 = algod_client.suggested_params()
 fund_txn = transaction.PaymentTxn(deployer, sp2, app_addr, 500000)
 signed_fund = fund_txn.sign(private_key)
@@ -84,13 +81,14 @@ txid2 = algod_client.send_transaction(signed_fund)
 wait(txid2)
 print("Funded app with 0.5 ALGO")
 
-# Opt-in app to USDC
+# FIX: must list USDC in foreign_assets for inner USDC transfer
 sp3 = algod_client.suggested_params()
 optin_txn = transaction.ApplicationNoOpTxn(
     sender=deployer,
     sp=sp3,
     index=app_id,
     app_args=[b"opt_in"],
+    foreign_assets=[USDC_TESTNET],
 )
 signed_optin = optin_txn.sign(private_key)
 txid3 = algod_client.send_transaction(signed_optin)
