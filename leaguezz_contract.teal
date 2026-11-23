@@ -1,42 +1,38 @@
 #pragma version 8
-// Leaguezz - TEAL
-// Box 96 bytes: creator 0-32, joiner 32-64, creatorPick 64-72, joinerPick 72-80, stake 80-88, status 88-96
-// USDC TestNet 10458941
-
 txn ApplicationID
 int 0
 ==
-bnz handle_create_app
+bnz create_app
 txn OnCompletion
 int NoOp
 ==
-bnz handle_noop
+bnz noop
 txn OnCompletion
 int OptIn
 ==
-bnz handle_optin
+bnz optin
 txn OnCompletion
 int CloseOut
 ==
-bnz handle_closeout
+bnz closeout
 txn OnCompletion
 int UpdateApplication
 ==
-bnz handle_reject
+bnz reject
 txn OnCompletion
 int DeleteApplication
 ==
-bnz handle_reject
+bnz reject
 err
 
-handle_create_app:
+create_app:
 byte "bet_count"
 int 0
 app_global_put
 int 1
 return
 
-handle_optin:
+optin:
 itxn_begin
 int axfer
 itxn_field TypeEnum
@@ -52,15 +48,15 @@ itxn_submit
 int 1
 return
 
-handle_closeout:
+closeout:
 int 1
 return
 
-handle_reject:
+reject:
 int 0
 return
 
-handle_noop:
+noop:
 txn ApplicationArgs 0
 byte "create"
 ==
@@ -79,7 +75,7 @@ byte "refund"
 bnz do_refund
 err
 
-// ===== CREATE =====
+// CREATE
 do_create:
 txn NumAppArgs
 int 3
@@ -90,37 +86,37 @@ store 20
 load 20
 byte "HOME"
 ==
-bnz create_pick_home
+bnz c_home
 load 20
 byte "DRAW"
 ==
-bnz create_pick_draw
+bnz c_draw
 load 20
 byte "AWAY"
 ==
-bnz create_pick_away
+bnz c_away
 err
-create_pick_home:
+c_home:
 int 0
-store 21
-b create_pick_done
-create_pick_draw:
+store 10
+b c_done
+c_draw:
 int 1
-store 21
-b create_pick_done
-create_pick_away:
+store 10
+b c_done
+c_away:
 int 2
-store 21
-b create_pick_done
-create_pick_done:
+store 10
+b c_done
+c_done:
 txn ApplicationArgs 2
 btoi
-store 22
-load 22
+store 11
+load 11
 int 1000000
 >=
 assert
-load 22
+load 11
 int 1000000000
 <=
 assert
@@ -141,51 +137,69 @@ global CurrentApplicationAddress
 ==
 assert
 gtxn 1 AssetAmount
-load 22
+load 11
 ==
 assert
 byte "bet_count"
 app_global_get
-store 23
-load 23
+store 12
+load 12
 itob
-store 24
-load 24
-box_length
-store 26
-store 25
-load 26
+store 13
+load 13
+box_len
 int 0
 ==
 assert
+pop
 txn Sender
-byte [STRIPPED 66 bytes]
+store 30
+zero_address
+store 31
+load 30
+load 31
 concat
-load 21
+store 32
+load 10
 itob
+store 33
+load 32
+load 33
 concat
+store 32
 int 255
 itob
+store 33
+load 32
+load 33
 concat
-load 22
+store 32
+load 11
 itob
+store 33
+load 32
+load 33
 concat
+store 32
 int 0
 itob
+store 33
+load 32
+load 33
 concat
-store 27
-load 24
-load 27
+store 32
+load 13
+load 32
 box_put
 byte "bet_count"
-load 23
+load 12
 int 1
 +
 app_global_put
 int 1
 return
 
-// ===== JOIN =====
+// JOIN
 do_join:
 txn NumAppArgs
 int 3
@@ -193,40 +207,38 @@ int 3
 assert
 txn ApplicationArgs 1
 btoi
-store 23
-load 23
+store 12
+load 12
 itob
-store 24
-load 24
+store 13
+load 13
 box_get
-store 28
-store 27
-load 28
 assert
-load 27
+store 32
+load 32
 int 0
 int 32
 extract
 store 30
-load 27
+load 32
 int 64
 int 8
 extract
 btoi
-store 32
-load 27
+store 23
+load 32
 int 80
 int 8
 extract
 btoi
-store 22
-load 27
+store 11
+load 32
 int 88
 int 8
 extract
 btoi
-store 33
-load 33
+store 25
+load 25
 int 0
 ==
 assert
@@ -239,31 +251,31 @@ store 20
 load 20
 byte "HOME"
 ==
-bnz join_pick_home
+bnz j_home
 load 20
 byte "DRAW"
 ==
-bnz join_pick_draw
+bnz j_draw
 load 20
 byte "AWAY"
 ==
-bnz join_pick_away
+bnz j_away
 err
-join_pick_home:
+j_home:
 int 0
-store 21
-b join_pick_done
-join_pick_draw:
+store 10
+b j_done
+j_draw:
 int 1
-store 21
-b join_pick_done
-join_pick_away:
+store 10
+b j_done
+j_away:
 int 2
-store 21
-b join_pick_done
-join_pick_done:
-load 21
-load 32
+store 10
+b j_done
+j_done:
+load 10
+load 23
 !=
 assert
 gtxn 1 TypeEnum
@@ -283,32 +295,48 @@ global CurrentApplicationAddress
 ==
 assert
 gtxn 1 AssetAmount
-load 22
+load 11
 ==
 assert
 load 30
 txn Sender
 concat
+store 32
+load 23
+itob
+store 33
 load 32
-itob
+load 33
 concat
-load 21
+store 32
+load 10
 itob
+store 33
+load 32
+load 33
 concat
-load 22
+store 32
+load 11
 itob
+store 33
+load 32
+load 33
 concat
+store 32
 int 1
 itob
+store 33
+load 32
+load 33
 concat
-store 27
-load 24
-load 27
+store 32
+load 13
+load 32
 box_put
 int 1
 return
 
-// ===== SETTLE - RANDOM, 5% FEE =====
+// SETTLE
 do_settle:
 txn NumAppArgs
 int 2
@@ -316,88 +344,78 @@ int 2
 assert
 txn ApplicationArgs 1
 btoi
-store 23
-load 23
+store 12
+load 12
 itob
-store 24
-load 24
+store 13
+load 13
 box_get
-store 28
-store 27
-load 28
 assert
-load 27
+store 32
+load 32
 int 0
 int 32
 extract
 store 30
-load 27
+load 32
 int 32
 int 32
 extract
 store 31
-load 27
+load 32
 int 64
 int 8
 extract
 btoi
-store 32
-load 27
+store 23
+load 32
 int 72
 int 8
 extract
 btoi
-store 34
-load 27
+store 24
+load 32
 int 80
 int 8
 extract
 btoi
-store 22
-load 27
+store 11
+load 32
 int 88
 int 8
 extract
 btoi
-store 33
-load 33
+store 25
+load 25
 int 1
 ==
 assert
 global LatestTimestamp
-store 45
-load 23
-load 45
+load 12
 +
-txn Sender
-int 0
-int 8
-extract
-btoi
-+
+store 40
+load 40
 int 3
 %
-store 21
-b settle_pick_done
-settle_pick_done:
-load 21
-load 32
+store 41
+load 41
+load 23
 ==
-bnz settle_creator_wins
-load 21
-load 34
+bnz win_creator
+load 41
+load 24
 ==
-bnz settle_joiner_wins
-b settle_refund_both
-settle_creator_wins:
-load 22
+bnz win_joiner
+b refund_both
+win_creator:
+load 11
 int 2
 *
 int 95
 *
 int 100
 /
-store 40
+store 42
 itxn_begin
 int axfer
 itxn_field TypeEnum
@@ -405,19 +423,19 @@ int 10458941
 itxn_field XferAsset
 load 30
 itxn_field AssetReceiver
-load 40
+load 42
 itxn_field AssetAmount
 int 0
 itxn_field Fee
 itxn_submit
-load 22
+load 11
 int 2
 *
 int 5
 *
 int 100
 /
-store 41
+store 43
 itxn_begin
 int axfer
 itxn_field TypeEnum
@@ -425,7 +443,7 @@ int 10458941
 itxn_field XferAsset
 global CreatorAddress
 itxn_field AssetReceiver
-load 41
+load 43
 itxn_field AssetAmount
 int 0
 itxn_field Fee
@@ -433,35 +451,51 @@ itxn_submit
 load 30
 load 31
 concat
+store 32
+load 23
+itob
+store 33
 load 32
-itob
+load 33
 concat
-load 34
+store 32
+load 24
 itob
+store 33
+load 32
+load 33
 concat
-load 22
+store 32
+load 11
 itob
+store 33
+load 32
+load 33
 concat
+store 32
 int 10
-load 21
+load 41
 +
 itob
+store 33
+load 32
+load 33
 concat
-store 27
-load 24
-load 27
+store 32
+load 13
+load 32
 box_put
 int 1
 return
-settle_joiner_wins:
-load 22
+win_joiner:
+load 11
 int 2
 *
 int 95
 *
 int 100
 /
-store 40
+store 42
 itxn_begin
 int axfer
 itxn_field TypeEnum
@@ -469,19 +503,19 @@ int 10458941
 itxn_field XferAsset
 load 31
 itxn_field AssetReceiver
-load 40
+load 42
 itxn_field AssetAmount
 int 0
 itxn_field Fee
 itxn_submit
-load 22
+load 11
 int 2
 *
 int 5
 *
 int 100
 /
-store 41
+store 43
 itxn_begin
 int axfer
 itxn_field TypeEnum
@@ -489,7 +523,7 @@ int 10458941
 itxn_field XferAsset
 global CreatorAddress
 itxn_field AssetReceiver
-load 41
+load 43
 itxn_field AssetAmount
 int 0
 itxn_field Fee
@@ -497,29 +531,43 @@ itxn_submit
 load 30
 load 31
 concat
+store 32
+load 23
+itob
+store 33
 load 32
-itob
+load 33
 concat
-load 34
+store 32
+load 24
 itob
+store 33
+load 32
+load 33
 concat
-load 22
+store 32
+load 11
 itob
+store 33
+load 32
+load 33
 concat
+store 32
 int 10
-load 21
+load 41
 +
 itob
+store 33
+load 32
+load 33
 concat
-store 27
-load 24
-load 27
+store 32
+load 13
+load 32
 box_put
 int 1
 return
-settle_cancelled:
-b settle_refund_both
-settle_refund_both:
+refund_both:
 itxn_begin
 int axfer
 itxn_field TypeEnum
@@ -527,7 +575,7 @@ int 10458941
 itxn_field XferAsset
 load 30
 itxn_field AssetReceiver
-load 22
+load 11
 itxn_field AssetAmount
 int 0
 itxn_field Fee
@@ -539,7 +587,7 @@ int 10458941
 itxn_field XferAsset
 load 31
 itxn_field AssetReceiver
-load 22
+load 11
 itxn_field AssetAmount
 int 0
 itxn_field Fee
@@ -547,26 +595,42 @@ itxn_submit
 load 30
 load 31
 concat
+store 32
+load 23
+itob
+store 33
 load 32
-itob
+load 33
 concat
-load 34
+store 32
+load 24
 itob
+store 33
+load 32
+load 33
 concat
-load 22
+store 32
+load 11
 itob
+store 33
+load 32
+load 33
 concat
+store 32
 int 3
 itob
+store 33
+load 32
+load 33
 concat
-store 27
-load 24
-load 27
+store 32
+load 13
+load 32
 box_put
 int 1
 return
 
-// ===== REFUND =====
+// REFUND
 do_refund:
 txn NumAppArgs
 int 2
@@ -574,46 +638,44 @@ int 2
 assert
 txn ApplicationArgs 1
 btoi
-store 23
-load 23
+store 12
+load 12
 itob
-store 24
-load 24
+store 13
+load 13
 box_get
-store 28
-store 27
-load 28
 assert
-load 27
+store 32
+load 32
 int 0
 int 32
 extract
 store 30
-load 27
+load 32
 int 64
 int 8
 extract
 btoi
-store 32
-load 27
+store 23
+load 32
 int 72
 int 8
 extract
 btoi
-store 34
-load 27
+store 24
+load 32
 int 80
 int 8
 extract
 btoi
-store 22
-load 27
+store 11
+load 32
 int 88
 int 8
 extract
 btoi
-store 33
-load 33
+store 25
+load 25
 int 0
 ==
 assert
@@ -628,29 +690,45 @@ int 10458941
 itxn_field XferAsset
 load 30
 itxn_field AssetReceiver
-load 22
+load 11
 itxn_field AssetAmount
 int 0
 itxn_field Fee
 itxn_submit
 load 30
-byte [STRIPPED 66 bytes]
+zero_address
 concat
+store 32
+load 23
+itob
+store 33
 load 32
-itob
+load 33
 concat
-load 34
+store 32
+load 24
 itob
+store 33
+load 32
+load 33
 concat
-load 22
+store 32
+load 11
 itob
+store 33
+load 32
+load 33
 concat
+store 32
 int 3
 itob
+store 33
+load 32
+load 33
 concat
-store 27
-load 24
-load 27
+store 32
+load 13
+load 32
 box_put
 int 1
 return
