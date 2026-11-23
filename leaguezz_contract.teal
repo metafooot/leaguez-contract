@@ -147,7 +147,7 @@ assert
 pop
 txn Sender
 store 30
-zero_address
+byte base64(AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=)
 store 31
 load 30
 load 31
@@ -683,7 +683,7 @@ int 0
 itxn_field Fee
 itxn_submit
 load 30
-zero_address
+byte base64(AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=)
 concat
 store 32
 load 23
