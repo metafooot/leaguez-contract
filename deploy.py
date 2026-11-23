@@ -1,12 +1,13 @@
 import os
 import base64
-import struct
-import hashlib
 from algosdk import account, mnemonic, transaction
 from algosdk.v2client import algod
-from algosdk.encoding import encode_address
 
 ALGOD = "https://testnet-api.algonode.cloud"
+
+# Your existing App - from last log
+APP_ID = 777121961
+APP_ADDRESS = "WY44FPW42JOEZJSVO2BN5VXQOG5KIWQ4TG5C2BYKXWHBD4HYPSVTMGXT5E"
 
 def main():
     seed = os.environ.get("DEPLOYER_MNEMONIC", "").strip()
@@ -19,46 +20,27 @@ def main():
         sk = base64.b64decode(seed)
         addr = account.address_from_private_key(sk)
     print(f"Deployer: {addr}")
+    print(f"Using existing App: {APP_ID}")
+    print(f"App Address: {APP_ADDRESS}")
     client = algod.AlgodClient("", ALGOD)
-    with open("leaguezz_contract.teal", "r") as f:
-        teal = f.read()
-    print("Compiling approval...")
-    approval_prog = base64.b64decode(client.compile(teal)["result"])
-    print("Compiling clear...")
-    clear_prog = base64.b64decode(client.compile("#pragma version 8\nint 1\nreturn")["result"])
-    params = client.suggested_params()
-    print("Creating App...")
-    txn = transaction.ApplicationCreateTxn(
-        sender=addr,
-        sp=params,
-        on_complete=transaction.OnComplete.NoOpOC,
-        approval_program=approval_prog,
-        clear_program=clear_prog,
-        global_schema=transaction.StateSchema(num_uints=1, num_byte_slices=0),
-        local_schema=transaction.StateSchema(num_uints=0, num_byte_slices=0),
-    )
-    signed = txn.sign(sk)
-    txid = client.send_transaction(signed)
-    print(f"Create Tx: {txid}")
-    result = transaction.wait_for_confirmation(client, txid, 10)
-    app_id = result["application-index"]
-    print(f"APP_ID={app_id}")
-    h = hashlib.sha256(b"appID" + struct.pack(">Q", app_id)).digest()
-    app_addr = encode_address(h)
-    print(f"APP_ADDRESS={app_addr}")
+
     print("Funding app 1 ALGO...")
     params = client.suggested_params()
-    fund = transaction.PaymentTxn(addr, params, app_addr, 1_000_000)
-    client.send_transaction(fund.sign(sk))
-    transaction.wait_for_confirmation(client, fund.get_txid(), 10)
-    print("Opting app into USDC...")
+    fund = transaction.PaymentTxn(addr, params, APP_ADDRESS, 1_000_000)
+    txid = client.send_transaction(fund.sign(sk))
+    print(f"Fund Tx: {txid}")
+    transaction.wait_for_confirmation(client, txid, 10)
+
+    print("Opting app into USDC with foreign_assets...")
     params = client.suggested_params()
-    optin = transaction.ApplicationOptInTxn(addr, params, app_id)
-    client.send_transaction(optin.sign(sk))
-    transaction.wait_for_confirmation(client, optin.get_txid(), 10)
-    print("DONE")
-    print(f"NEW APP ID: {app_id}")
-    print(f"NEW APP ADDRESS: {app_addr}")
+    optin = transaction.ApplicationOptInTxn(addr, params, APP_ID, foreign_assets=[10458941])
+    txid2 = client.send_transaction(optin.sign(sk))
+    print(f"Optin Tx: {txid2}")
+    transaction.wait_for_confirmation(client, txid2, 10)
+
+    print("DONE - App fixed")
+    print(f"APP_ID={APP_ID}")
+    print(f"APP_ADDRESS={APP_ADDRESS}")
 
 if __name__ == "__main__":
     main()
