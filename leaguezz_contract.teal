@@ -40,7 +40,7 @@ global CurrentApplicationAddress
 itxn_field AssetReceiver
 int 0
 itxn_field AssetAmount
-int 0
+int 1000
 itxn_field Fee
 itxn_submit
 int 1
@@ -414,7 +414,7 @@ load 30
 itxn_field AssetReceiver
 load 42
 itxn_field AssetAmount
-int 0
+int 1000
 itxn_field Fee
 itxn_submit
 load 11
@@ -434,7 +434,7 @@ global CreatorAddress
 itxn_field AssetReceiver
 load 43
 itxn_field AssetAmount
-int 0
+int 1000
 itxn_field Fee
 itxn_submit
 load 30
@@ -494,7 +494,7 @@ load 31
 itxn_field AssetReceiver
 load 42
 itxn_field AssetAmount
-int 0
+int 1000
 itxn_field Fee
 itxn_submit
 load 11
@@ -514,7 +514,7 @@ global CreatorAddress
 itxn_field AssetReceiver
 load 43
 itxn_field AssetAmount
-int 0
+int 1000
 itxn_field Fee
 itxn_submit
 load 30
@@ -566,7 +566,7 @@ load 30
 itxn_field AssetReceiver
 load 11
 itxn_field AssetAmount
-int 0
+int 1000
 itxn_field Fee
 itxn_submit
 itxn_begin
@@ -578,7 +578,7 @@ load 31
 itxn_field AssetReceiver
 load 11
 itxn_field AssetAmount
-int 0
+int 1000
 itxn_field Fee
 itxn_submit
 load 30
@@ -679,7 +679,7 @@ load 30
 itxn_field AssetReceiver
 load 11
 itxn_field AssetAmount
-int 0
+int 1000
 itxn_field Fee
 itxn_submit
 load 30
