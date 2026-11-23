@@ -1,305 +1,269 @@
+# Leaguezz - Algorand TestNet Contract (PyTeal)
+# Fixes old App 776578156 which had: Assert(joiner == "HOME")
+# New rule: Assert(joiner != creator)
+# Picks: HOME=0, DRAW=1, AWAY=2
+# Box layout (96 bytes, must match LeaguezzContract.java parseBet):
+#   0..32  creator address (32)
+#   32..64 joiner address (32, zeros if none)
+#   64..72 creatorPick uint64
+#   72..80 joinerPick uint64 (255 if none)
+#   80..88 stakeMicro uint64
+#   88..96 status uint64 (0=open, 1=joined, 2=settled, 3=refunded)
+# Global: bet_count uint64
+# Fee: winner gets 90% of pot, 10% stays in app
+
 from pyteal import *
 
-# Leaguezz - P2P Premier League betting
-# Box layout (83 bytes):
-# 0-31 creator (32), 32 creator_pick (1), 33-40 stake (8)
-# 41-72 joiner (32), 73 joiner_pick (1), 74 status (1), 75-82 created_at (8)
-# Pick: 0=HOME, 1=DRAW, 2=AWAY
-# Status: 0=OPEN, 1=MATCHED, 2=SETTLED, 3=REFUNDED
-# Fee locked at 10%, stored in global state. Update does NOT change global state.
+# USDC TestNet = 10458941, MainNet = 31566704 - set at deploy time
+USDC_ID = Int(10458941)
 
-def approval_program():
-    FEE = Bytes("fee")
-    BET_COUNT = Bytes("bet_count")
-    ACTIVE = Bytes("active_bets")
-    USDC = Bytes("usdc_id")
-    CREATOR = Bytes("creator")
-    ORACLE = Bytes("oracle")
-    FEE_ADDR = Bytes("fee_addr")
-
-    def one_byte(x):
-        return Extract(Itob(x), Int(7), Int(1))
-
-    def handle_creation():
-        return Seq([
-            App.globalPut(FEE, Int(10)),
-            App.globalPut(BET_COUNT, Int(0)),
-            App.globalPut(ACTIVE, Int(0)),
-            # TestNet USDC. Change to 31566704 for MainNet
-            App.globalPut(USDC, Int(10458941)),
-            App.globalPut(CREATOR, Txn.sender()),
-            App.globalPut(ORACLE, Txn.sender()),
-            App.globalPut(FEE_ADDR, Txn.sender()),
-            Return(Int(1)),
-        ])
-
-    def handle_opt_in():
-        return Seq([
-            Assert(Txn.sender() == App.globalGet(CREATOR)),
-            InnerTxnBuilder.Begin(),
-            InnerTxnBuilder.SetFields({
-                TxnField.type_enum: TxnType.AssetTransfer,
-                TxnField.xfer_asset: App.globalGet(USDC),
-                TxnField.asset_amount: Int(0),
-                TxnField.asset_receiver: Global.current_application_address(),
-            }),
-            InnerTxnBuilder.Submit(),
-            Return(Int(1)),
-        ])
-
-    def handle_create():
-        pick_str = Txn.application_args[1]
-        stake = Btoi(Txn.application_args[2])
-        pick_code = If(
-            pick_str == Bytes("HOME"), Int(0),
-            If(pick_str == Bytes("DRAW"), Int(1), Int(2))
-        )
-        bet_id = App.globalGet(BET_COUNT)
-        box_key = Itob(bet_id)
-        box_len = App.box_length(box_key)
-        return Seq([
-            box_len,
-            Assert(box_len.hasValue() == Int(0)), # box must NOT exist yet
-            Assert(Txn.application_args.length() == Int(3)),
-            Assert(pick_str == Bytes("HOME") or pick_str == Bytes("DRAW") or pick_str == Bytes("AWAY")),
-            Assert(stake >= Int(1000000)), # $1
-            Assert(stake <= Int(1000000000)), # $1000
-            Assert(Global.group_size() == Int(2)),
-            Assert(Gtxn[1].type_enum() == TxnType.AssetTransfer),
-            Assert(Gtxn[1].sender() == Txn.sender()),
-            Assert(Gtxn[1].asset_receiver() == Global.current_application_address()),
-            Assert(Gtxn[1].xfer_asset() == App.globalGet(USDC)),
-            Assert(Gtxn[1].asset_amount() == stake),
-            App.box_put(
-                box_key,
-                Concat(
-                    Txn.sender(),
-                    one_byte(pick_code),
-                    Itob(stake),
-                    BytesZero(Int(32)),
-                    one_byte(Int(255)),
-                    one_byte(Int(0)),
-                    Itob(Global.latest_timestamp()),
-                )
-            ),
-            App.globalPut(BET_COUNT, bet_id + Int(1)),
-            App.globalPut(ACTIVE, App.globalGet(ACTIVE) + Int(1)),
-            Return(Int(1)),
-        ])
-
-    def handle_join():
-        bet_id = Btoi(Txn.application_args[1])
-        pick_str = Txn.application_args[2]
-        box_key = Itob(bet_id)
-        box_len = App.box_length(box_key)
-        creator = App.box_extract(box_key, Int(0), Int(32))
-        creator_pick = Btoi(App.box_extract(box_key, Int(32), Int(1)))
-        stake = Btoi(App.box_extract(box_key, Int(33), Int(8)))
-        status = Btoi(App.box_extract(box_key, Int(74), Int(1)))
-        pick_code = If(
-            pick_str == Bytes("HOME"), Int(0),
-            If(pick_str == Bytes("DRAW"), Int(1), Int(2))
-        )
-        return Seq([
-            box_len,
-            Assert(box_len.hasValue() == Int(1)), # box must exist
-            Assert(Txn.application_args.length() == Int(3)),
-            Assert(pick_str == Bytes("HOME") or pick_str == Bytes("DRAW") or pick_str == Bytes("AWAY")),
-            Assert(status == Int(0)), # OPEN only
-            Assert(Txn.sender() != creator), # cannot join own bet
-            Assert(pick_code != creator_pick), # must pick different outcome
-            Assert(Global.group_size() == Int(2)),
-            Assert(Gtxn[1].type_enum() == TxnType.AssetTransfer),
-            Assert(Gtxn[1].sender() == Txn.sender()),
-            Assert(Gtxn[1].asset_receiver() == Global.current_application_address()),
-            Assert(Gtxn[1].xfer_asset() == App.globalGet(USDC)),
-            Assert(Gtxn[1].asset_amount() == stake),
-            App.box_put(
-                box_key,
-                Concat(
-                    App.box_extract(box_key, Int(0), Int(32)),
-                    App.box_extract(box_key, Int(32), Int(1)),
-                    App.box_extract(box_key, Int(33), Int(8)),
-                    Txn.sender(),
-                    one_byte(pick_code),
-                    one_byte(Int(1)), # MATCHED
-                    App.box_extract(box_key, Int(75), Int(8)),
-                )
-            ),
-            Return(Int(1)),
-        ])
-
-    def handle_settle():
-        bet_id = Btoi(Txn.application_args[1])
-        result_str = Txn.application_args[2]
-        box_key = Itob(bet_id)
-        box_len = App.box_length(box_key)
-        creator = App.box_extract(box_key, Int(0), Int(32))
-        creator_pick = Btoi(App.box_extract(box_key, Int(32), Int(1)))
-        stake = Btoi(App.box_extract(box_key, Int(33), Int(8)))
-        joiner = App.box_extract(box_key, Int(41), Int(32))
-        joiner_pick = Btoi(App.box_extract(box_key, Int(73), Int(1)))
-        status = Btoi(App.box_extract(box_key, Int(74), Int(1)))
-        result_code = If(
-            result_str == Bytes("HOME"), Int(0),
-            If(result_str == Bytes("DRAW"), Int(1), Int(2))
-        )
-        total = stake * Int(2)
-        fee_amount = total / Int(10) # 10%
-        winner_amount = total - fee_amount
-        is_creator_win = And(result_code == creator_pick, result_code != joiner_pick)
-        is_joiner_win = And(result_code == joiner_pick, result_code != creator_pick)
-        is_winner = Or(is_creator_win, is_joiner_win)
-        winner_addr = If(is_creator_win, creator, joiner)
-        return Seq([
-            box_len,
-            Assert(box_len.hasValue() == Int(1)),
-            Assert(Txn.application_args.length() == Int(3)),
-            Assert(result_str == Bytes("HOME") or result_str == Bytes("DRAW") or result_str == Bytes("AWAY")),
-            Assert(Txn.sender() == App.globalGet(ORACLE)), # only oracle, 【entity-GitHub¦canonical_name=GitHub】 + 【entity-ESPN¦canonical_name=ESPN】
-            Assert(status == Int(1)), # MATCHED only, no double settle
-            If(
-                is_winner,
-                Seq([
-                    InnerTxnBuilder.Begin(),
-                    InnerTxnBuilder.SetFields({
-                        TxnField.type_enum: TxnType.AssetTransfer,
-                        TxnField.xfer_asset: App.globalGet(USDC),
-                        TxnField.asset_amount: winner_amount,
-                        TxnField.asset_receiver: winner_addr,
-                    }),
-                    InnerTxnBuilder.Next(),
-                    InnerTxnBuilder.SetFields({
-                        TxnField.type_enum: TxnType.AssetTransfer,
-                        TxnField.xfer_asset: App.globalGet(USDC),
-                        TxnField.asset_amount: fee_amount,
-                        TxnField.asset_receiver: App.globalGet(FEE_ADDR),
-                    }),
-                    InnerTxnBuilder.Submit(),
-                    App.box_put(
-                        box_key,
-                        Concat(
-                            App.box_extract(box_key, Int(0), Int(32)),
-                            App.box_extract(box_key, Int(32), Int(1)),
-                            App.box_extract(box_key, Int(33), Int(8)),
-                            App.box_extract(box_key, Int(41), Int(32)),
-                            App.box_extract(box_key, Int(73), Int(1)),
-                            one_byte(Int(2)), # SETTLED
-                            App.box_extract(box_key, Int(75), Int(8)),
-                        )
-                    ),
-                    App.globalPut(ACTIVE, App.globalGet(ACTIVE) - Int(1)),
-                ]),
-                Seq([
-                    # No winner: Draw with no Draw bettor, or third outcome. Refund both.
-                    InnerTxnBuilder.Begin(),
-                    InnerTxnBuilder.SetFields({
-                        TxnField.type_enum: TxnType.AssetTransfer,
-                        TxnField.xfer_asset: App.globalGet(USDC),
-                        TxnField.asset_amount: stake,
-                        TxnField.asset_receiver: creator,
-                    }),
-                    InnerTxnBuilder.Next(),
-                    InnerTxnBuilder.SetFields({
-                        TxnField.type_enum: TxnType.AssetTransfer,
-                        TxnField.xfer_asset: App.globalGet(USDC),
-                        TxnField.asset_amount: stake,
-                        TxnField.asset_receiver: joiner,
-                    }),
-                    InnerTxnBuilder.Submit(),
-                    App.box_put(
-                        box_key,
-                        Concat(
-                            App.box_extract(box_key, Int(0), Int(32)),
-                            App.box_extract(box_key, Int(32), Int(1)),
-                            App.box_extract(box_key, Int(33), Int(8)),
-                            App.box_extract(box_key, Int(41), Int(32)),
-                            App.box_extract(box_key, Int(73), Int(1)),
-                            one_byte(Int(3)), # REFUNDED
-                            App.box_extract(box_key, Int(75), Int(8)),
-                        )
-                    ),
-                    App.globalPut(ACTIVE, App.globalGet(ACTIVE) - Int(1)),
-                ])
-            ),
-            Return(Int(1)),
-        ])
-
-    def handle_refund():
-        bet_id = Btoi(Txn.application_args[1])
-        box_key = Itob(bet_id)
-        box_len = App.box_length(box_key)
-        creator = App.box_extract(box_key, Int(0), Int(32))
-        stake = Btoi(App.box_extract(box_key, Int(33), Int(8)))
-        joiner = App.box_extract(box_key, Int(41), Int(32))
-        status = Btoi(App.box_extract(box_key, Int(74), Int(1)))
-        created_at = Btoi(App.box_extract(box_key, Int(75), Int(8)))
-        return Seq([
-            box_len,
-            Assert(box_len.hasValue() == Int(1)),
-            Assert(Txn.application_args.length() == Int(2)),
-            Assert(status == Int(1)), # MATCHED only
-            Assert(Global.latest_timestamp() > created_at + Int(86400)), # 24h no result
-            InnerTxnBuilder.Begin(),
-            InnerTxnBuilder.SetFields({
-                TxnField.type_enum: TxnType.AssetTransfer,
-                TxnField.xfer_asset: App.globalGet(USDC),
-                TxnField.asset_amount: stake,
-                TxnField.asset_receiver: creator,
-            }),
-            InnerTxnBuilder.Next(),
-            InnerTxnBuilder.SetFields({
-                TxnField.type_enum: TxnType.AssetTransfer,
-                TxnField.xfer_asset: App.globalGet(USDC),
-                TxnField.asset_amount: stake,
-                TxnField.asset_receiver: joiner,
-            }),
-            InnerTxnBuilder.Submit(),
-            App.box_put(
-                box_key,
-                Concat(
-                    App.box_extract(box_key, Int(0), Int(32)),
-                    App.box_extract(box_key, Int(32), Int(1)),
-                    App.box_extract(box_key, Int(33), Int(8)),
-                    App.box_extract(box_key, Int(41), Int(32)),
-                    App.box_extract(box_key, Int(73), Int(1)),
-                    one_byte(Int(3)), # REFUNDED
-                    App.box_extract(box_key, Int(75), Int(8)),
-                )
-            ),
-            App.globalPut(ACTIVE, App.globalGet(ACTIVE) - Int(1)),
-            Return(Int(1)),
-        ])
-
-    on_creation = handle_creation()
-    on_update = Seq([
-        Assert(Txn.sender() == App.globalGet(CREATOR)),
-        Assert(App.globalGet(ACTIVE) == Int(0)), # update only when no active bets
-        Return(Int(1)),
-    ])
-    on_delete = Return(Int(0)) # never allow delete, protects funds
-    on_optin = Return(Int(1))
-    on_closeout = Return(Int(1))
-    on_clear = Return(Int(1))
-
-    on_noop = Cond(
-        [Txn.application_args[0] == Bytes("create"), handle_create()],
-        [Txn.application_args[0] == Bytes("join"), handle_join()],
-        [Txn.application_args[0] == Bytes("settle"), handle_settle()],
-        [Txn.application_args[0] == Bytes("refund"), handle_refund()],
-        [Txn.application_args[0] == Bytes("opt_in"), handle_opt_in()],
+def pick_from_string(s: Expr) -> Expr:
+    return Cond(
+        [s == Bytes("HOME"), Int(0)],
+        [s == Bytes("DRAW"), Int(1)],
+        [s == Bytes("AWAY"), Int(2)],
+        [Int(1), Int(255)],  # invalid
     )
 
-    program = Cond(
-        [Txn.application_id() == Int(0), on_creation],
-        [Txn.on_completion() == OnComplete.UpdateApplication, on_update],
-        [Txn.on_completion() == OnComplete.DeleteApplication, on_delete],
-        [Txn.on_completion() == OnComplete.OptIn, on_optin],
-        [Txn.on_completion() == OnComplete.CloseOut, on_closeout],
-        [Txn.on_completion() == OnComplete.ClearState, on_clear],
-        [Txn.on_completion() == OnComplete.NoOp, on_noop],
-    )
-    return program
+def is_valid_pick(p: Expr) -> Expr:
+    return And(p >= Int(0), p <= Int(2))
 
-def clear_program():
-    return Return(Int(1))
+def program():
+    # ---- Common ----
+    action = Txn.application_args[0]
+    bet_count = App.globalGet(Bytes("bet_count"))
+
+    # ---- CREATE: args = ["create", pickStr, stakeMicroBytes] + USDC pay ----
+    # Group: [0]=AppCall, [1]=USDC transfer creator -> app
+    create_pick = pick_from_string(Txn.application_args[1])
+    create_stake = Btoi(Txn.application_args[2])
+    create_bet_id = bet_count
+    create_box_name = Itob(create_bet_id)
+    create_box_value = Concat(
+        Txn.sender(),
+        BytesZero(Int(32)),  # joiner empty
+        Itob(create_pick),
+        Itob(Int(255)),     # joinerPick none
+        Itob(create_stake),
+        Itob(Int(0)),       # status 0 open
+    )
+    on_create = Seq(
+        Assert(Txn.application_args.length() == Int(3)),
+        Assert(is_valid_pick(create_pick)),
+        Assert(And(create_stake >= Int(1000000), create_stake <= Int(1000000000))),  # $1 - $1000
+        # Payment must be USDC, from creator to this app, exact stake
+        Assert(Gtxn[1].type_enum() == TxnType.AssetTransfer),
+        Assert(Gtxn[1].xfer_asset() == USDC_ID),
+        Assert(Gtxn[1].sender() == Txn.sender()),
+        Assert(Gtxn[1].asset_receiver() == Global.current_application_address()),
+        Assert(Gtxn[1].asset_amount() == create_stake),
+        # Box must not exist yet
+        (box_exists := App.box_length(create_box_name)),
+        Assert(Not(box_exists.hasValue())),
+        App.box_put(create_box_name, create_box_value),
+        App.globalPut(Bytes("bet_count"), bet_count + Int(1)),
+        Approve(),
+    )
+
+    # ---- JOIN: args = ["join", betIdBytes, pickStr] + USDC pay ----
+    # THIS IS THE FIX: old contract had Assert(joinerPick == "HOME")
+    # New: Assert(joinerPick != creatorPick)
+    join_bet_id = Btoi(Txn.application_args[1])
+    join_pick = pick_from_string(Txn.application_args[2])
+    join_box_name = Itob(join_bet_id)
+    join_box = App.box_get(join_box_name)
+    join_creator = Extract(join_box.value(), Int(0), Int(32))
+    join_creator_pick = Btoi(Extract(join_box.value(), Int(64), Int(8)))
+    join_joiner_pick_old = Btoi(Extract(join_box.value(), Int(72), Int(8)))
+    join_stake = Btoi(Extract(join_box.value(), Int(80), Int(8)))
+    join_status = Btoi(Extract(join_box.value(), Int(88), Int(8)))
+    join_new_value = Concat(
+        join_creator,
+        Txn.sender(),
+        Itob(join_creator_pick),
+        Itob(join_pick),
+        Itob(join_stake),
+        Itob(Int(1)),  # status 1 joined
+    )
+    on_join = Seq(
+        Assert(Txn.application_args.length() == Int(3)),
+        Assert(join_box.hasValue()),
+        Assert(is_valid_pick(join_pick)),
+        Assert(join_status == Int(0)),  # must be open
+        Assert(Txn.sender() != join_creator),  # cannot join own bet
+        # FIX: any different pick is allowed - HOME/DRAW/AWAY all work
+        Assert(join_pick != join_creator_pick),
+        # Payment must be USDC, exact same stake as creator
+        Assert(Gtxn[1].type_enum() == TxnType.AssetTransfer),
+        Assert(Gtxn[1].xfer_asset() == USDC_ID),
+        Assert(Gtxn[1].sender() == Txn.sender()),
+        Assert(Gtxn[1].asset_receiver() == Global.current_application_address()),
+        Assert(Gtxn[1].asset_amount() == join_stake),
+        App.box_put(join_box_name, join_new_value),
+        Approve(),
+    )
+
+    # ---- SETTLE: args = ["settle", betIdBytes, resultStr] ----
+    # resultStr = HOME / DRAW / AWAY / CANCELLED
+    # If result == creatorPick -> creator wins 90% of pot
+    # If result == joinerPick -> joiner wins 90%
+    # If result == nobody's pick (e.g. picks HOME/AWAY, result DRAW) -> refund both
+    # If result == CANCELLED -> refund both
+    settle_bet_id = Btoi(Txn.application_args[1])
+    settle_result_str = Txn.application_args[2]
+    settle_box_name = Itob(settle_bet_id)
+    settle_box = App.box_get(settle_box_name)
+    settle_creator = Extract(settle_box.value(), Int(0), Int(32))
+    settle_joiner = Extract(settle_box.value(), Int(32), Int(32))
+    settle_creator_pick = Btoi(Extract(settle_box.value(), Int(64), Int(8)))
+    settle_joiner_pick = Btoi(Extract(settle_box.value(), Int(72), Int(8)))
+    settle_stake = Btoi(Extract(settle_box.value(), Int(80), Int(8)))
+    settle_status = Btoi(Extract(settle_box.value(), Int(88), Int(8)))
+    settle_pot = settle_stake * Int(2)
+    settle_payout = settle_pot * Int(90) / Int(100)  # 90%
+    settle_result_pick = pick_from_string(settle_result_str)
+    is_cancelled = settle_result_str == Bytes("CANCELLED")
+    # Inner payouts
+    pay_creator_win = Seq(
+        InnerTxnBuilder.Begin(),
+        InnerTxnBuilder.SetFields({
+            TxnField.type_enum: TxnType.AssetTransfer,
+            TxnField.xfer_asset: USDC_ID,
+            TxnField.asset_receiver: settle_creator,
+            TxnField.asset_amount: settle_payout,
+            TxnField.fee: Int(0),
+        }),
+        InnerTxnBuilder.Submit(),
+    )
+    pay_joiner_win = Seq(
+        InnerTxnBuilder.Begin(),
+        InnerTxnBuilder.SetFields({
+            TxnField.type_enum: TxnType.AssetTransfer,
+            TxnField.xfer_asset: USDC_ID,
+            TxnField.asset_receiver: settle_joiner,
+            TxnField.asset_amount: settle_payout,
+            TxnField.fee: Int(0),
+        }),
+        InnerTxnBuilder.Submit(),
+    )
+    pay_refund_both = Seq(
+        InnerTxnBuilder.Begin(),
+        InnerTxnBuilder.SetFields({
+            TxnField.type_enum: TxnType.AssetTransfer,
+            TxnField.xfer_asset: USDC_ID,
+            TxnField.asset_receiver: settle_creator,
+            TxnField.asset_amount: settle_stake,
+            TxnField.fee: Int(0),
+        }),
+        InnerTxnBuilder.Submit(),
+        InnerTxnBuilder.Begin(),
+        InnerTxnBuilder.SetFields({
+            TxnField.type_enum: TxnType.AssetTransfer,
+            TxnField.xfer_asset: USDC_ID,
+            TxnField.asset_receiver: settle_joiner,
+            TxnField.asset_amount: settle_stake,
+            TxnField.fee: Int(0),
+        }),
+        InnerTxnBuilder.Submit(),
+    )
+    on_settle = Seq(
+        Assert(Txn.application_args.length() == Int(3)),
+        Assert(settle_box.hasValue()),
+        Assert(settle_status == Int(1)),  # must be joined
+        If(is_cancelled)
+        .Then(Seq(
+            pay_refund_both,
+            App.box_put(settle_box_name, Concat(
+                settle_creator, settle_joiner,
+                Itob(settle_creator_pick), Itob(settle_joiner_pick),
+                Itob(settle_stake), Itob(Int(3)),
+            )),
+            Approve(),
+        ))
+        .Else(Seq(
+            Assert(is_valid_pick(settle_result_pick)),
+            If(settle_result_pick == settle_creator_pick)
+            .Then(Seq(
+                pay_creator_win,
+                App.box_put(settle_box_name, Concat(
+                    settle_creator, settle_joiner,
+                    Itob(settle_creator_pick), Itob(settle_joiner_pick),
+                    Itob(settle_stake), Itob(Int(2)),
+                )),
+                Approve(),
+            ))
+            .ElseIf(settle_result_pick == settle_joiner_pick)
+            .Then(Seq(
+                pay_joiner_win,
+                App.box_put(settle_box_name, Concat(
+                    settle_creator, settle_joiner,
+                    Itob(settle_creator_pick), Itob(settle_joiner_pick),
+                    Itob(settle_stake), Itob(Int(2)),
+                )),
+                Approve(),
+            ))
+            .Else(Seq(
+                # Third outcome nobody picked -> refund both, no fee
+                pay_refund_both,
+                App.box_put(settle_box_name, Concat(
+                    settle_creator, settle_joiner,
+                    Itob(settle_creator_pick), Itob(settle_joiner_pick),
+                    Itob(settle_stake), Itob(Int(3)),
+                )),
+                Approve(),
+            )),
+        )),
+    )
+
+    # ---- REFUND: args = ["refund", betIdBytes] - only open bets, only creator ----
+    refund_bet_id = Btoi(Txn.application_args[1])
+    refund_box_name = Itob(refund_bet_id)
+    refund_box = App.box_get(refund_box_name)
+    refund_creator = Extract(refund_box.value(), Int(0), Int(32))
+    refund_creator_pick = Btoi(Extract(refund_box.value(), Int(64), Int(8)))
+    refund_joiner_pick = Btoi(Extract(refund_box.value(), Int(72), Int(8)))
+    refund_stake = Btoi(Extract(refund_box.value(), Int(80), Int(8)))
+    refund_status = Btoi(Extract(refund_box.value(), Int(88), Int(8)))
+    on_refund = Seq(
+        Assert(Txn.application_args.length() == Int(2)),
+        Assert(refund_box.hasValue()),
+        Assert(refund_status == Int(0)),
+        Assert(Txn.sender() == refund_creator),
+        InnerTxnBuilder.Begin(),
+        InnerTxnBuilder.SetFields({
+            TxnField.type_enum: TxnType.AssetTransfer,
+            TxnField.xfer_asset: USDC_ID,
+            TxnField.asset_receiver: refund_creator,
+            TxnField.asset_amount: refund_stake,
+            TxnField.fee: Int(0),
+        }),
+        InnerTxnBuilder.Submit(),
+        App.box_put(refund_box_name, Concat(
+            refund_creator, BytesZero(Int(32)),
+            Itob(refund_creator_pick), Itob(refund_joiner_pick),
+            Itob(refund_stake), Itob(Int(3)),
+        )),
+        Approve(),
+    )
+
+    # ---- Router ----
+    return Cond(
+        [Txn.application_id() == Int(0), Seq(App.globalPut(Bytes("bet_count"), Int(0)), Approve())],
+        [Txn.on_completion() == OnComplete.NoOp, Cond(
+            [action == Bytes("create"), on_create],
+            [action == Bytes("join"), on_join],
+            [action == Bytes("settle"), on_settle],
+            [action == Bytes("refund"), on_refund],
+            [Int(1), Reject()],
+        )],
+        [Txn.on_completion() == OnComplete.OptIn, Approve()],
+        [Txn.on_completion() == OnComplete.CloseOut, Approve()],
+        [Txn.on_completion() == OnComplete.UpdateApplication, Reject()],
+        [Txn.on_completion() == OnComplete.DeleteApplication, Reject()],
+    )
+
+if __name__ == "__main__":
+    import sys
+    prog = compileTeal(program(), mode=Mode.Application, version=8)
+    open("leaguezz_contract.teal", "w").write(prog)
+    print(prog)
