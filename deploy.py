@@ -43,7 +43,7 @@ def main():
     result = transaction.wait_for_confirmation(client, txid, 10)
     app_id = result["application-index"]
     print(f"APP_ID={app_id}")
-    h = hashlib.sha256(b"appID" + struct.pack(">Q", app_id)).digest()
+    h = hashlib.new('sha512_256', b"appID" + struct.pack(">Q", app_id)).digest()
     app_addr = encode_address(h)
     print(f"APP_ADDRESS={app_addr}")
     print("Funding app 1 ALGO...")
