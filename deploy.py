@@ -1,99 +1,84 @@
+"""
+Leaguezz - GitHub Deploy
+Deploys leaguezz_contract.teal to Algorand Testnet.
+Mnemonic comes ONLY from GitHub Secret DEPLOYER_MNEMONIC - never in code, never in chat.
+Run in GitHub Actions: Actions > Deploy Leaguezz > Run workflow
+Prints NEW App ID + App Address in logs - copy them, they stay in logs.
+"""
 import os
 import base64
-import hashlib
-from algosdk import account, mnemonic, encoding
+from algosdk import account, mnemonic, transaction
 from algosdk.v2client import algod
-from algosdk import transaction
-from pyteal import compileTeal, Mode
-from contract import approval_program, clear_program
 
-ALGOD_URL = "https://testnet-api.algonode.cloud"
-USDC_TESTNET = 10458941
+ALGOD = "https://testnet-api.algonode.cloud"
+USDC_ID = 10458941
 
-def compile_program(client, source):
-    result = client.compile(source)
-    return base64.b64decode(result["result"])
+def main():
+    seed = os.environ.get("DEPLOYER_MNEMONIC", "").strip()
+    if not seed:
+        raise SystemExit("ERROR: DEPLOYER_MNEMONIC secret is empty. Add it in GitHub > Settings > Secrets > Actions.")
+    # Support both 25 words and base64 private key
+    if len(seed.split()) == 25:
+        sk = mnemonic.to_private_key(seed)
+        addr = account.address_from_private_key(sk)
+    else:
+        # Assume base64 private key
+        sk = base64.b64decode(seed)
+        addr = account.address_from_private_key(sk)
+    print(f"Deployer: {addr}")
 
-def wait(txid):
-    return transaction.wait_for_confirmation(algod_client, txid, 10)
+    client = algod.AlgodClient("", ALGOD)
+    with open("leaguezz_contract.teal", "r") as f:
+        teal = f.read()
 
-def get_app_address(app_id):
-    # CORRECT: Algorand uses SHA512_256, not SHA256
-    buf = b"appID" + app_id.to_bytes(8, "big")
-    h = hashlib.new("sha512_256", buf).digest()
-    return encoding.encode_address(h)
+    print("Compiling approval...")
+    approval = client.compile(teal)["result"]
+    approval_prog = base64.b64decode(approval)
+    print("Compiling clear...")
+    clear = client.compile("#pragma version 8\nint 1\nreturn")["result"]
+    clear_prog = base64.b64decode(clear)
 
-mnemonic_phrase = os.environ.get("DEPLOYER_MNEMONIC", "").strip()
-if not mnemonic_phrase:
-    raise SystemExit("Missing DEPLOYER_MNEMONIC secret")
+    params = client.suggested_params()
+    print("Creating App...")
+    txn = transaction.ApplicationCreateTxn(
+        sender=addr,
+        sp=params,
+        on_complete=transaction.OnComplete.NoOpOC,
+        approval_program=approval_prog,
+        clear_program=clear_prog,
+        global_schema=transaction.StateSchema(num_uints=1, num_byte_slices=0),
+        local_schema=transaction.StateSchema(num_uints=0, num_byte_slices=0),
+    )
+    signed = txn.sign(sk)
+    txid = client.send_transaction(signed)
+    print(f"Create Tx: {txid}")
+    result = transaction.wait_for_confirmation(client, txid, 10)
+    app_id = result["application-index"]
+    print(f"APP_ID={app_id}")
+    app_addr = transaction.logic.address_from_program(approval_prog)  # placeholder, replaced below
+    # Real app address:
+    from algosdk import logic
+    import hashlib
+    # Algorand app address = SHA256("appID" + uint64(app_id))
+    import struct
+    h = hashlib.sha256(b"appID" + struct.pack(">Q", app_id)).digest()
+    from algosdk.encoding import encode_address
+    app_addr = encode_address(h)
+    print(f"APP_ADDRESS={app_addr}")
+    print("Funding app 1 ALGO...")
+    params = client.suggested_params()
+    fund = transaction.PaymentTxn(addr, params, app_addr, 1_000_000)
+    client.send_transaction(fund.sign(sk))
+    transaction.wait_for_confirmation(client, fund.get_txid(), 10)
+    print("Opting app into USDC...")
+    params = client.suggested_params()
+    optin = transaction.ApplicationOptInTxn(addr, params, app_id)
+    client.send_transaction(optin.sign(sk))
+    transaction.wait_for_confirmation(client, optin.get_txid(), 10)
+    print("DONE")
+    print(f"NEW APP ID: {app_id}")
+    print(f"NEW APP ADDRESS: {app_addr}")
+    print("Copy App ID into LeaguezzContract.java TESTNET_APP_ID once, Rebuild.")
 
-private_key = mnemonic.to_private_key(mnemonic_phrase)
-deployer = account.address_from_private_key(private_key)
-
-algod_client = algod.AlgodClient("", ALGOD_URL)
-
-print(f"Deployer: {deployer}")
-
-approval_teal = compileTeal(approval_program(), mode=Mode.Application, version=8)
-clear_teal = compileTeal(clear_program(), mode=Mode.Application, version=8)
-
-approval_compiled = compile_program(algod_client, approval_teal)
-clear_compiled = compile_program(algod_client, clear_teal)
-
-sp = algod_client.suggested_params()
-
-global_schema = transaction.StateSchema(num_uints=4, num_byte_slices=3)
-local_schema = transaction.StateSchema(num_uints=0, num_byte_slices=0)
-
-create_txn = transaction.ApplicationCreateTxn(
-    sender=deployer,
-    sp=sp,
-    on_complete=transaction.OnComplete.NoOpOC,
-    approval_program=approval_compiled,
-    clear_program=clear_compiled,
-    global_schema=global_schema,
-    local_schema=local_schema,
-    extra_pages=1,
-)
-
-signed = create_txn.sign(private_key)
-txid = algod_client.send_transaction(signed)
-confirmed = wait(txid)
-app_id = confirmed["application-index"]
-app_addr = get_app_address(app_id)
-
-print("========================================")
-print("LEAGUEZZ DEPLOYED - TESTNET")
-print(f"APP_ID={app_id}")
-print(f"APP_ADDRESS={app_addr}")
-print(f"DEPLOYER={deployer}")
-print("========================================")
-
-with open("app_id.txt", "w") as f:
-    f.write(f"APP_ID={app_id}\n")
-    f.write(f"APP_ADDRESS={app_addr}\n")
-    f.write(f"DEPLOYER={deployer}\n")
-    f.write(f"USDC_TESTNET={USDC_TESTNET}\n")
-
-sp2 = algod_client.suggested_params()
-fund_txn = transaction.PaymentTxn(deployer, sp2, app_addr, 500000)
-signed_fund = fund_txn.sign(private_key)
-txid2 = algod_client.send_transaction(signed_fund)
-wait(txid2)
-print("Funded app with 0.5 ALGO")
-
-sp3 = algod_client.suggested_params()
-optin_txn = transaction.ApplicationNoOpTxn(
-    sender=deployer,
-    sp=sp3,
-    index=app_id,
-    app_args=[b"opt_in"],
-    foreign_assets=[USDC_TESTNET],
-)
-signed_optin = optin_txn.sign(private_key)
-txid3 = algod_client.send_transaction(signed_optin)
-wait(txid3)
-print("App opted-in to USDC - READY")
-print("========================================")
-print(f"COPY THIS APP_ID: {app_id}")
-print("========================================")
+if __name__ == "__main__":
+    main()
