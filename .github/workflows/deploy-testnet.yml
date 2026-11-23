@@ -1,7 +1,7 @@
 name: Deploy Leaguezz
 
 on:
-  workflow_dispatch:  # Manual button in GitHub app - Actions > Deploy Leaguezz > Run workflow
+  workflow_dispatch:
 
 jobs:
   deploy:
