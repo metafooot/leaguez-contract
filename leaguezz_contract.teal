@@ -1,0 +1,656 @@
+#pragma version 8
+// Leaguezz - TEAL
+// Box 96 bytes: creator 0-32, joiner 32-64, creatorPick 64-72, joinerPick 72-80, stake 80-88, status 88-96
+// USDC TestNet 10458941
+
+txn ApplicationID
+int 0
+==
+bnz handle_create_app
+txn OnCompletion
+int NoOp
+==
+bnz handle_noop
+txn OnCompletion
+int OptIn
+==
+bnz handle_optin
+txn OnCompletion
+int CloseOut
+==
+bnz handle_closeout
+txn OnCompletion
+int UpdateApplication
+==
+bnz handle_reject
+txn OnCompletion
+int DeleteApplication
+==
+bnz handle_reject
+err
+
+handle_create_app:
+byte "bet_count"
+int 0
+app_global_put
+int 1
+return
+
+handle_optin:
+itxn_begin
+int axfer
+itxn_field TypeEnum
+int 10458941
+itxn_field XferAsset
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+int 0
+itxn_field AssetAmount
+int 0
+itxn_field Fee
+itxn_submit
+int 1
+return
+
+handle_closeout:
+int 1
+return
+
+handle_reject:
+int 0
+return
+
+handle_noop:
+txn ApplicationArgs 0
+byte "create"
+==
+bnz do_create
+txn ApplicationArgs 0
+byte "join"
+==
+bnz do_join
+txn ApplicationArgs 0
+byte "settle"
+==
+bnz do_settle
+txn ApplicationArgs 0
+byte "refund"
+==
+bnz do_refund
+err
+
+// ===== CREATE =====
+do_create:
+txn NumAppArgs
+int 3
+==
+assert
+txn ApplicationArgs 1
+store 20
+load 20
+byte "HOME"
+==
+bnz create_pick_home
+load 20
+byte "DRAW"
+==
+bnz create_pick_draw
+load 20
+byte "AWAY"
+==
+bnz create_pick_away
+err
+create_pick_home:
+int 0
+store 21
+b create_pick_done
+create_pick_draw:
+int 1
+store 21
+b create_pick_done
+create_pick_away:
+int 2
+store 21
+b create_pick_done
+create_pick_done:
+txn ApplicationArgs 2
+btoi
+store 22
+load 22
+int 1000000
+>=
+assert
+load 22
+int 1000000000
+<=
+assert
+gtxn 1 TypeEnum
+int axfer
+==
+assert
+gtxn 1 XferAsset
+int 10458941
+==
+assert
+gtxn 1 Sender
+txn Sender
+==
+assert
+gtxn 1 AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+gtxn 1 AssetAmount
+load 22
+==
+assert
+byte "bet_count"
+app_global_get
+store 23
+load 23
+itob
+store 24
+load 24
+box_length
+store 26
+store 25
+load 26
+int 0
+==
+assert
+txn Sender
+byte [STRIPPED 66 bytes]
+concat
+load 21
+itob
+concat
+int 255
+itob
+concat
+load 22
+itob
+concat
+int 0
+itob
+concat
+store 27
+load 24
+load 27
+box_put
+byte "bet_count"
+load 23
+int 1
++
+app_global_put
+int 1
+return
+
+// ===== JOIN =====
+do_join:
+txn NumAppArgs
+int 3
+==
+assert
+txn ApplicationArgs 1
+btoi
+store 23
+load 23
+itob
+store 24
+load 24
+box_get
+store 28
+store 27
+load 28
+assert
+load 27
+int 0
+int 32
+extract
+store 30
+load 27
+int 64
+int 8
+extract
+btoi
+store 32
+load 27
+int 80
+int 8
+extract
+btoi
+store 22
+load 27
+int 88
+int 8
+extract
+btoi
+store 33
+load 33
+int 0
+==
+assert
+txn Sender
+load 30
+!=
+assert
+txn ApplicationArgs 2
+store 20
+load 20
+byte "HOME"
+==
+bnz join_pick_home
+load 20
+byte "DRAW"
+==
+bnz join_pick_draw
+load 20
+byte "AWAY"
+==
+bnz join_pick_away
+err
+join_pick_home:
+int 0
+store 21
+b join_pick_done
+join_pick_draw:
+int 1
+store 21
+b join_pick_done
+join_pick_away:
+int 2
+store 21
+b join_pick_done
+join_pick_done:
+load 21
+load 32
+!=
+assert
+gtxn 1 TypeEnum
+int axfer
+==
+assert
+gtxn 1 XferAsset
+int 10458941
+==
+assert
+gtxn 1 Sender
+txn Sender
+==
+assert
+gtxn 1 AssetReceiver
+global CurrentApplicationAddress
+==
+assert
+gtxn 1 AssetAmount
+load 22
+==
+assert
+load 30
+txn Sender
+concat
+load 32
+itob
+concat
+load 21
+itob
+concat
+load 22
+itob
+concat
+int 1
+itob
+concat
+store 27
+load 24
+load 27
+box_put
+int 1
+return
+
+// ===== SETTLE - RANDOM, 5% FEE =====
+do_settle:
+txn NumAppArgs
+int 2
+==
+assert
+txn ApplicationArgs 1
+btoi
+store 23
+load 23
+itob
+store 24
+load 24
+box_get
+store 28
+store 27
+load 28
+assert
+load 27
+int 0
+int 32
+extract
+store 30
+load 27
+int 32
+int 32
+extract
+store 31
+load 27
+int 64
+int 8
+extract
+btoi
+store 32
+load 27
+int 72
+int 8
+extract
+btoi
+store 34
+load 27
+int 80
+int 8
+extract
+btoi
+store 22
+load 27
+int 88
+int 8
+extract
+btoi
+store 33
+load 33
+int 1
+==
+assert
+global LatestTimestamp
+store 45
+load 23
+load 45
++
+txn Sender
+int 0
+int 8
+extract
+btoi
++
+int 3
+%
+store 21
+b settle_pick_done
+settle_pick_done:
+load 21
+load 32
+==
+bnz settle_creator_wins
+load 21
+load 34
+==
+bnz settle_joiner_wins
+b settle_refund_both
+settle_creator_wins:
+load 22
+int 2
+*
+int 95
+*
+int 100
+/
+store 40
+itxn_begin
+int axfer
+itxn_field TypeEnum
+int 10458941
+itxn_field XferAsset
+load 30
+itxn_field AssetReceiver
+load 40
+itxn_field AssetAmount
+int 0
+itxn_field Fee
+itxn_submit
+load 22
+int 2
+*
+int 5
+*
+int 100
+/
+store 41
+itxn_begin
+int axfer
+itxn_field TypeEnum
+int 10458941
+itxn_field XferAsset
+global CreatorAddress
+itxn_field AssetReceiver
+load 41
+itxn_field AssetAmount
+int 0
+itxn_field Fee
+itxn_submit
+load 30
+load 31
+concat
+load 32
+itob
+concat
+load 34
+itob
+concat
+load 22
+itob
+concat
+int 10
+load 21
++
+itob
+concat
+store 27
+load 24
+load 27
+box_put
+int 1
+return
+settle_joiner_wins:
+load 22
+int 2
+*
+int 95
+*
+int 100
+/
+store 40
+itxn_begin
+int axfer
+itxn_field TypeEnum
+int 10458941
+itxn_field XferAsset
+load 31
+itxn_field AssetReceiver
+load 40
+itxn_field AssetAmount
+int 0
+itxn_field Fee
+itxn_submit
+load 22
+int 2
+*
+int 5
+*
+int 100
+/
+store 41
+itxn_begin
+int axfer
+itxn_field TypeEnum
+int 10458941
+itxn_field XferAsset
+global CreatorAddress
+itxn_field AssetReceiver
+load 41
+itxn_field AssetAmount
+int 0
+itxn_field Fee
+itxn_submit
+load 30
+load 31
+concat
+load 32
+itob
+concat
+load 34
+itob
+concat
+load 22
+itob
+concat
+int 10
+load 21
++
+itob
+concat
+store 27
+load 24
+load 27
+box_put
+int 1
+return
+settle_cancelled:
+b settle_refund_both
+settle_refund_both:
+itxn_begin
+int axfer
+itxn_field TypeEnum
+int 10458941
+itxn_field XferAsset
+load 30
+itxn_field AssetReceiver
+load 22
+itxn_field AssetAmount
+int 0
+itxn_field Fee
+itxn_submit
+itxn_begin
+int axfer
+itxn_field TypeEnum
+int 10458941
+itxn_field XferAsset
+load 31
+itxn_field AssetReceiver
+load 22
+itxn_field AssetAmount
+int 0
+itxn_field Fee
+itxn_submit
+load 30
+load 31
+concat
+load 32
+itob
+concat
+load 34
+itob
+concat
+load 22
+itob
+concat
+int 3
+itob
+concat
+store 27
+load 24
+load 27
+box_put
+int 1
+return
+
+// ===== REFUND =====
+do_refund:
+txn NumAppArgs
+int 2
+==
+assert
+txn ApplicationArgs 1
+btoi
+store 23
+load 23
+itob
+store 24
+load 24
+box_get
+store 28
+store 27
+load 28
+assert
+load 27
+int 0
+int 32
+extract
+store 30
+load 27
+int 64
+int 8
+extract
+btoi
+store 32
+load 27
+int 72
+int 8
+extract
+btoi
+store 34
+load 27
+int 80
+int 8
+extract
+btoi
+store 22
+load 27
+int 88
+int 8
+extract
+btoi
+store 33
+load 33
+int 0
+==
+assert
+txn Sender
+load 30
+==
+assert
+itxn_begin
+int axfer
+itxn_field TypeEnum
+int 10458941
+itxn_field XferAsset
+load 30
+itxn_field AssetReceiver
+load 22
+itxn_field AssetAmount
+int 0
+itxn_field Fee
+itxn_submit
+load 30
+byte [STRIPPED 66 bytes]
+concat
+load 32
+itob
+concat
+load 34
+itob
+concat
+load 22
+itob
+concat
+int 3
+itob
+concat
+store 27
+load 24
+load 27
+box_put
+int 1
+return
