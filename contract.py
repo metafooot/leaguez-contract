@@ -76,7 +76,7 @@ def approval():
         Assert(Gtxn[1].asset_receiver() == Global.current_application_address()),
         Assert(Gtxn[1].asset_amount() == create_stake),
         # Box must not exist yet
-        Assert(Not(BoxLength(create_box).hasValue())),
+        Assert(Not(BoxLen(create_box).hasValue())),
         BoxCreate(create_box, Int(96)),
         BoxPut(create_box, create_value),
         App.globalPut(Bytes("bet_count"), create_bet_id + Int(1)),
