@@ -21,6 +21,9 @@ def main():
     print("Deployer:", addr)
     client = algod.AlgodClient("", ALGOD)
     params = client.suggested_params()
+    # FIX: cover inner txn fee - outer must pay for inner opt-in
+    params.fee = 3000
+    params.flat_fee = True
     approval_teal = compileTeal(approval(), mode=Mode.Application, version=8)
     clear_teal = compileTeal(clear(), mode=Mode.Application, version=8)
     comp_approval = client.compile(approval_teal)
@@ -35,7 +38,7 @@ def main():
         clear_program=clear_prog,
         global_schema=StateSchema(1, 0),
         local_schema=StateSchema(0, 0),
-        foreign_assets=[USDC_ID],  # FIX: lets creation inner txn see USDC
+        foreign_assets=[USDC_ID],
     )
     signed = txn.sign(sk)
     txid = client.send_transaction(signed)
@@ -57,6 +60,8 @@ def main():
     print(f'  TESTNET_APP_ADDRESS = "{app_addr}";')
     print("\nFunding app with 1 ALGO...")
     params2 = client.suggested_params()
+    params2.fee = 1000
+    params2.flat_fee = True
     fund = PaymentTxn(addr, params2, app_addr, FUND_AMOUNT)
     txid2 = client.send_transaction(fund.sign(sk))
     wait_for_confirmation(client, txid2, 10)
