@@ -20,7 +20,13 @@ def is_valid_pick(p):
     return And(p >= Int(0), p <= Int(2))
 
 def approval():
+    # Creation: NO opt-in here - app has 0 balance at creation, opt-in would fail min-balance
     on_create = Seq(
+        App.globalPut(Bytes("bet_count"), Int(0)),
+        Approve(),
+    )
+    # Opt-in AFTER funding - deploy.py funds 5 ALGO, then calls "optin"
+    on_optin = Seq(
         InnerTxnBuilder.Begin(),
         InnerTxnBuilder.SetFields({
             TxnField.type_enum: TxnType.AssetTransfer,
@@ -30,7 +36,6 @@ def approval():
             TxnField.fee: Int(0),
         }),
         InnerTxnBuilder.Submit(),
-        App.globalPut(Bytes("bet_count"), Int(0)),
         Approve(),
     )
 
@@ -230,6 +235,7 @@ def approval():
         [Txn.on_completion() == OnComplete.UpdateApplication, Reject()],
         [Txn.on_completion() == OnComplete.DeleteApplication, Reject()],
         [Txn.on_completion() == OnComplete.ClearState, Approve()],
+        [method == Bytes("optin"), on_optin],
         [method == Bytes("create"), on_create_bet],
         [method == Bytes("join"), on_join],
         [method == Bytes("settle"), on_settle],
