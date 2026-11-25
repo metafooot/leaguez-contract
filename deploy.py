@@ -5,10 +5,10 @@ from contract import approval, clear
 from pyteal import compileTeal, Mode
 from algosdk import account, mnemonic
 from algosdk.v2client import algod
-from algosdk.transaction import ApplicationCreateTxn, PaymentTxn, wait_for_confirmation, StateSchema
+from algosdk.transaction import ApplicationCreateTxn, ApplicationCallTxn, PaymentTxn, wait_for_confirmation, StateSchema
 
 ALGOD = "https://testnet-api.algonode.cloud"
-FUND_AMOUNT = 1_000_000
+FUND_AMOUNT = 5_000_000
 USDC_ID = 10458941
 
 def main():
@@ -21,7 +21,6 @@ def main():
     print("Deployer:", addr)
     client = algod.AlgodClient("", ALGOD)
     params = client.suggested_params()
-    # FIX: cover inner txn fee - outer must pay for inner opt-in
     params.fee = 3000
     params.flat_fee = True
     approval_teal = compileTeal(approval(), mode=Mode.Application, version=8)
@@ -38,7 +37,6 @@ def main():
         clear_program=clear_prog,
         global_schema=StateSchema(1, 0),
         local_schema=StateSchema(0, 0),
-        foreign_assets=[USDC_ID],
     )
     signed = txn.sign(sk)
     txid = client.send_transaction(signed)
@@ -52,20 +50,38 @@ def main():
         from algosdk import encoding
         import hashlib
         app_addr = encoding.encode_address(hashlib.new('sha512_256', b'appID' + app_id.to_bytes(8, 'big')).digest())
-    print(f"\n=== DONE ===")
     print(f"New App ID: {app_id}")
     print(f"New App Address: {app_addr}")
-    print(f"\nPaste into LeaguezzContract.java:")
-    print(f"  TESTNET_APP_ID = {app_id}L;")
-    print(f'  TESTNET_APP_ADDRESS = "{app_addr}";')
-    print("\nFunding app with 1 ALGO...")
+    print("Funding app with 5 ALGO...")
     params2 = client.suggested_params()
     params2.fee = 1000
     params2.flat_fee = True
     fund = PaymentTxn(addr, params2, app_addr, FUND_AMOUNT)
     txid2 = client.send_transaction(fund.sign(sk))
     wait_for_confirmation(client, txid2, 10)
-    print("Funded. App is ready. Test $0.30 create in app.")
+    print("Funded.")
+    print("Opting app into USDC...")
+    params3 = client.suggested_params()
+    params3.fee = 2000
+    params3.flat_fee = True
+    optin = ApplicationCallTxn(
+        sender=addr,
+        sp=params3,
+        index=app_id,
+        on_complete=0,
+        app_args=[b"optin"],
+        foreign_assets=[USDC_ID],
+    )
+    txid3 = client.send_transaction(optin.sign(sk))
+    wait_for_confirmation(client, txid3, 10)
+    print("Opted into USDC.")
+    print(f"\n=== DONE ===")
+    print(f"New App ID: {app_id}")
+    print(f"New App Address: {app_addr}")
+    print(f"\nPaste into LeaguezzContract.java:")
+    print(f"  TESTNET_APP_ID = {app_id}L;")
+    print(f'  TESTNET_APP_ADDRESS = "{app_addr}";')
+    print("App is ready. Test $0.30 create in app.")
 
 if __name__ == "__main__":
     main()
