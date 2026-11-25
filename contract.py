@@ -48,9 +48,6 @@ def approval():
         Approve(),
     )
 
-    # Common: betId from args, box name = Itob(betId)
-    # We handle each method separately so box reads are clean.
-
     # ---- CREATE ----
     create_pick = pick_from_str(Txn.application_args[1])
     create_stake = Btoi(Txn.application_args[2])
@@ -77,7 +74,7 @@ def approval():
         Assert(Gtxn[1].asset_amount() == create_stake),
         # Box must not exist yet
         Assert(Not(BoxLen(create_box).hasValue())),
-        BoxCreate(create_box, Int(96)),
+        Assert(BoxCreate(create_box, Int(96))),
         BoxPut(create_box, create_value),
         App.globalPut(Bytes("bet_count"), create_bet_id + Int(1)),
         Approve(),
@@ -125,7 +122,6 @@ def approval():
     # Random result: (timestamp + betId + round) % 3 - no admin picks it
     settle_result = (Global.latest_timestamp() + settle_bet_id + Global.round()) % Int(3)
     settle_winner_amount = settle_stake * Int(190) / Int(100)  # 2x stake * 95% = $0.57 on $0.30
-    # Pay winner helper is inlined below via If branches
     on_settle = Seq(
         Assert(Txn.application_args.length() == Int(2)),
         Assert(settle_val.hasValue()),
