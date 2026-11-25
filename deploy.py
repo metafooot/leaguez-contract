@@ -1,9 +1,5 @@
 # Deploy Leaguezz contract to Algorand Testnet
-# 1. pip install pyteal algosdk
-# 2. Set env: export DEPLOYER_MNEMONIC="your 25 words"
-# 3. python deploy.py
-# Output will print NEW App ID + App Address - paste those into LeaguezzContract.java (Android)
-import os, sys
+import os, sys, base64
 sys.path.insert(0, ".")
 from contract import approval, clear
 from pyteal import compileTeal, Mode
@@ -18,7 +14,6 @@ def main():
     m = os.environ.get("DEPLOYER_MNEMONIC", "").strip()
     if not m:
         print("ERROR: Set DEPLOYER_MNEMONIC env var first")
-        print('  export DEPLOYER_MNEMONIC="word1 word2 ... word25"')
         return
     sk = mnemonic.to_private_key(m)
     addr = account.address_from_private_key(sk)
@@ -29,12 +24,15 @@ def main():
     clear_teal = compileTeal(clear(), mode=Mode.Application, version=8)
     comp_approval = client.compile(approval_teal)
     comp_clear = client.compile(clear_teal)
+    # FIX: compile returns base64, not hex
+    approval_prog = base64.b64decode(comp_approval["result"])
+    clear_prog = base64.b64decode(comp_clear["result"])
     txn = ApplicationCreateTxn(
         sender=addr,
         sp=params,
         on_complete=0,
-        approval_program=bytes.fromhex(comp_approval["result"]),
-        clear_program=bytes.fromhex(comp_clear["result"]),
+        approval_program=approval_prog,
+        clear_program=clear_prog,
         global_schema=StateSchema(1, 0),
         local_schema=StateSchema(0, 0),
     )
