@@ -9,6 +9,7 @@ from algosdk.transaction import ApplicationCreateTxn, PaymentTxn, wait_for_confi
 
 ALGOD = "https://testnet-api.algonode.cloud"
 FUND_AMOUNT = 1_000_000
+USDC_ID = 10458941
 
 def main():
     m = os.environ.get("DEPLOYER_MNEMONIC", "").strip()
@@ -24,7 +25,6 @@ def main():
     clear_teal = compileTeal(clear(), mode=Mode.Application, version=8)
     comp_approval = client.compile(approval_teal)
     comp_clear = client.compile(clear_teal)
-    # FIX: compile returns base64, not hex
     approval_prog = base64.b64decode(comp_approval["result"])
     clear_prog = base64.b64decode(comp_clear["result"])
     txn = ApplicationCreateTxn(
@@ -35,6 +35,7 @@ def main():
         clear_program=clear_prog,
         global_schema=StateSchema(1, 0),
         local_schema=StateSchema(0, 0),
+        foreign_assets=[USDC_ID],  # FIX: lets creation inner txn see USDC
     )
     signed = txn.sign(sk)
     txid = client.send_transaction(signed)
